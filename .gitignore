@@ -1,0 +1,55 @@
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+*.pkl
+*.pickle
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Project artifacts
+*.index
+vector.index
+chunk_data.pkl
+temp.pdf
+
+# Claude/agent tooling
+.claude/
+.claude-flow/
+.graph-it/
+
+# Misc
+hello*.txt
