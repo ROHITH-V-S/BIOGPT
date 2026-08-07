@@ -45,6 +45,8 @@ Thumbs.db
 vector.index
 chunk_data.pkl
 temp.pdf
+data/*.index
+data/*.pkl
 
 # Claude/agent tooling
 .claude/
