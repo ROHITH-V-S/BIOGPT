@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     FAISS_INDEX_PATH: str = 'data/vector.index'
     CHUNK_DATA_PATH: str = 'data/chunk_data.pkl'
     CORS_ORIGINS: list[str] = ['http://localhost:3000', 'http://localhost:5173']
+    ENTITY_AWARE_DEFAULT: bool = False
+    NER_MODEL: str = 'en_core_sci_sm'
 
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 

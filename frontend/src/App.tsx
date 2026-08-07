@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react"
 import { Search, Loader2, FileText, Sparkles, Activity, ExternalLink, ChevronDown, ChevronUp } from "lucide-react"
 
 // Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const API_BASE_URL = import.meta.env.VITE_API_URL || ""
 
 // Types
 interface Source {
@@ -29,11 +29,13 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const [entityAware, setEntityAware] = useState(false)
   
   const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set())
   const [health, setHealth] = useState<HealthData | null>(null)
   
   const [modelUsed, setModelUsed] = useState<string | null>(null)
+  const [entities, setEntities] = useState<{genes?: string[], diseases?: string[], drugs?: string[]} | null>(null)
 
   // Fetch health status
   useEffect(() => {
@@ -64,6 +66,7 @@ export default function App() {
     setChunks([])
     setSources([])
     setModelUsed(null)
+    setEntities(null)
 
     try {
       const response = await fetch(`${API_BASE_URL}/query`, {
@@ -71,7 +74,7 @@ export default function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query: query.trim(), max_results: 5, stream: true }),
+        body: JSON.stringify({ query: query.trim(), max_results: 5, stream: true, entity_aware: entityAware }),
       })
 
       if (!response.ok) {
@@ -104,6 +107,7 @@ export default function App() {
               if (currentEvent === "chunk") {
                 if (data.chunks) setChunks(data.chunks)
                 if (data.sources) setSources(data.sources)
+                if (data.entities) setEntities(data.entities)
               } else if (currentEvent === "token") {
                 currentAnswer += data.token
                 setAnswer(currentAnswer)
@@ -179,6 +183,16 @@ export default function App() {
         <div className="flex-1 pb-16 animate-slide-up" style={{ animationDelay: '0.1s' }}>
           <div className="w-full mx-auto max-w-4xl">
             <form onSubmit={handleSubmit} className="mb-10 group">
+              <div className="flex flex-col mb-3">
+                <div className="flex items-center gap-3 px-2 mb-2 self-start cursor-pointer group/toggle" onClick={() => setEntityAware(!entityAware)}>
+                  <div className={`w-11 h-6 rounded-full relative transition-colors duration-300 shadow-inner flex items-center ${entityAware ? 'bg-biocyan' : 'bg-gray-800'}`}>
+                    <div className={`absolute bg-white w-4 h-4 rounded-full transition-transform duration-300 shadow-sm ${entityAware ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                  </div>
+                  <span className={`text-sm font-medium transition-colors ${entityAware ? 'text-biocyan' : 'text-gray-400 group-hover/toggle:text-gray-300'}`}>
+                    Entity-Aware Retrieval
+                  </span>
+                </div>
+              </div>
               <div className="relative flex flex-col sm:flex-row gap-4">
                 <div className="flex-1 relative">
                   <textarea
@@ -244,6 +258,28 @@ export default function App() {
                 {(answer || loading) && !error && (
                   <div className="glass-card rounded-2xl p-6 sm:p-8 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-biocyan via-bioblue to-biopurple opacity-70"></div>
+                    
+                    {/* Entities Display */}
+                    {entities && (entities.genes?.length || entities.diseases?.length || entities.drugs?.length) ? (
+                      <div className="flex flex-wrap gap-2.5 mb-8 p-4 bg-gray-950/40 rounded-xl border border-gray-800/60 shadow-inner">
+                        {entities.genes?.map(g => (
+                          <span key={`gene-${g}`} className="px-3 py-1.5 bg-blue-900/30 text-blue-300 text-xs font-semibold rounded-full border border-blue-700/50 flex items-center gap-1.5 shadow-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span> {g}
+                          </span>
+                        ))}
+                        {entities.diseases?.map(d => (
+                          <span key={`disease-${d}`} className="px-3 py-1.5 bg-red-900/30 text-red-300 text-xs font-semibold rounded-full border border-red-700/50 flex items-center gap-1.5 shadow-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span> {d}
+                          </span>
+                        ))}
+                        {entities.drugs?.map(d => (
+                          <span key={`drug-${d}`} className="px-3 py-1.5 bg-green-900/30 text-green-300 text-xs font-semibold rounded-full border border-green-700/50 flex items-center gap-1.5 shadow-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span> {d}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
                     <h2 className="text-xl font-semibold mb-5 flex items-center gap-2 text-gray-100">
                       <Sparkles className="w-5 h-5 text-bioblue" />
                       Synthesized Answer

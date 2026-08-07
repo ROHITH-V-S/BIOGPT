@@ -1,10 +1,11 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class QueryRequest(BaseModel):
     query: str
     max_results: int = 5
     stream: bool = False
+    entity_aware: bool = False
 
 class PaperSummary(BaseModel):
     title: str
@@ -15,6 +16,7 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[PaperSummary]
     chunks: List[str]
+    entities: Optional[Dict[str, List[str]]] = None
 
 class IngestRequest(BaseModel):
     pdf_path: Optional[str] = None

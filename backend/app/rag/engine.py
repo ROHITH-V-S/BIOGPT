@@ -10,6 +10,7 @@ from app.embeddings import EmbeddingService
 from app.rag.embedder import load_index
 from app.llm import generate_answer, stream_answer
 from app.schemas import QueryResponse, PaperSummary
+from app.ner import extract_entities
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +71,48 @@ class RAGEngine:
         logger.info("Retrieved %d chunks.", len(results))
         return results
 
+    async def retrieve_entity_aware(self, query: str, k: int = 5) -> list[str]:
+        """Entity-aware retrieval: retrieves 2*k, re-ranks based on entities, returns top-k."""
+        entities_dict = extract_entities(query)
+        # Flatten all extracted entities into a single list of lowercase strings
+        entities = []
+        for v in entities_dict.values():
+            entities.extend([e.lower() for e in v])
+        
+        # Get top 2*k candidates using normal vector search
+        candidates = await self.retrieve(query, k=k * 2)
+        
+        if not candidates:
+            return []
+            
+        # Re-rank: simple count of entity matches
+        scored_candidates = []
+        for chunk in candidates:
+            chunk_lower = chunk.lower()
+            score = 0
+            for entity in entities:
+                if entity in chunk_lower:
+                    score += 1
+            scored_candidates.append((score, chunk))
+            
+        # Sort by score descending (stable sort maintains vector search order for ties)
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        
+        # Return top k
+        return [chunk for score, chunk in scored_candidates[:k]]
+
     async def query(
         self,
         question: str,
         sources: list[PaperSummary] | None = None,
         k: int = 5,
+        entity_aware: bool = False,
     ) -> QueryResponse:
         """Full RAG pipeline: retrieve context → generate answer."""
-        context_chunks = await self.retrieve(question, k)
+        if entity_aware:
+            context_chunks = await self.retrieve_entity_aware(question, k)
+        else:
+            context_chunks = await self.retrieve(question, k)
 
         if not context_chunks:
             return QueryResponse(
@@ -97,10 +132,13 @@ class RAGEngine:
         )
 
     async def stream_query(
-        self, question: str, k: int = 5
+        self, question: str, k: int = 5, entity_aware: bool = False
     ) -> AsyncGenerator[str, None]:
         """Stream answer tokens after retrieval."""
-        context_chunks = await self.retrieve(question, k)
+        if entity_aware:
+            context_chunks = await self.retrieve_entity_aware(question, k)
+        else:
+            context_chunks = await self.retrieve(question, k)
 
         if not context_chunks:
             yield "No relevant information found in the knowledge base."

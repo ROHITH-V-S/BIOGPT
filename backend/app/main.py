@@ -25,6 +25,7 @@ from app.schemas import (
 from app.rag.engine import RAGEngine
 from app.rag.embedder import embed_and_store
 from app.rag.loader import load_pdf_chunks
+from app.ner import extract_entities
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -180,7 +181,14 @@ async def query_endpoint(req: QueryRequest):
     # --- Non-streaming path ---------------------------------------------------
     try:
         sources_task = asyncio.create_task(fetch_pubmed(req.query, req.max_results))
-        context_chunks = await rag_engine.retrieve(req.query, k=req.max_results)
+        
+        entities = extract_entities(req.query) if req.entity_aware else None
+        
+        if req.entity_aware:
+            context_chunks = await rag_engine.retrieve_entity_aware(req.query, k=req.max_results)
+        else:
+            context_chunks = await rag_engine.retrieve(req.query, k=req.max_results)
+            
         sources = await sources_task
 
         if not context_chunks:
@@ -188,12 +196,13 @@ async def query_endpoint(req: QueryRequest):
                 answer="No relevant information found in the knowledge base. Try ingesting documents first.",
                 sources=sources,
                 chunks=[],
+                entities=entities
             )
 
         from app.llm import generate_answer
         answer = await generate_answer(req.query, context_chunks)
 
-        return QueryResponse(answer=answer, sources=sources, chunks=context_chunks)
+        return QueryResponse(answer=answer, sources=sources, chunks=context_chunks, entities=entities)
     except Exception as exc:
         logger.exception("Query error")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -211,13 +220,21 @@ async def _stream_rag_response(req: QueryRequest) -> AsyncGenerator[str, None]:
     try:
         # 1. Retrieve context + PubMed sources concurrently
         sources_task = asyncio.create_task(fetch_pubmed(req.query, req.max_results))
-        context_chunks = await rag_engine.retrieve(req.query, k=req.max_results)
+        
+        entities = extract_entities(req.query) if req.entity_aware else None
+        
+        if req.entity_aware:
+            context_chunks = await rag_engine.retrieve_entity_aware(req.query, k=req.max_results)
+        else:
+            context_chunks = await rag_engine.retrieve(req.query, k=req.max_results)
+            
         sources = await sources_task
 
         # 2. Send retrieved chunks + sources first
         chunk_event = {
             "chunks": context_chunks,
             "sources": [s.model_dump() for s in sources],
+            "entities": entities
         }
         yield f"event: chunk\ndata: {json.dumps(chunk_event)}\n\n"
 
