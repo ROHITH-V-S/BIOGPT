@@ -1,0 +1,42 @@
+[
+  {
+    "question": "What is the role of TP53 in cancer development?",
+    "ground_truth": "TP53 is a tumor suppressor gene that regulates cell division. Mutations in TP53 allow uncontrolled cell proliferation, contributing to cancer.",
+    "ground_truth_context": ["TP53 encodes the p53 protein, which is essential for regulating the cell cycle and functioning as a tumor suppressor. Loss of p53 function is found in many cancers."]
+  },
+  {
+    "question": "How do mRNA vaccines work?",
+    "ground_truth": "mRNA vaccines work by introducing a messenger RNA sequence that instructs cells to produce a harmless piece of a viral protein, triggering an immune response.",
+    "ground_truth_context": ["mRNA vaccines teach our cells how to make a protein—or even just a piece of a protein—that triggers an immune response inside our bodies. That immune response, which produces antibodies, is what protects us from getting infected if the real virus enters our bodies."]
+  },
+  {
+    "question": "What is the primary mechanism of action of Metformin in treating type 2 diabetes?",
+    "ground_truth": "Metformin lowers blood sugar primarily by decreasing glucose production in the liver and improving insulin sensitivity in peripheral tissues.",
+    "ground_truth_context": ["The primary mechanism of action of metformin is the inhibition of hepatic glucose production. It also enhances peripheral tissue sensitivity to insulin, thereby increasing peripheral glucose uptake and utilization."]
+  },
+  {
+    "question": "What are the hallmarks of Alzheimer's disease pathology?",
+    "ground_truth": "The primary hallmarks of Alzheimer's disease are the accumulation of amyloid-beta plaques outside neurons and neurofibrillary tangles of tau protein inside neurons.",
+    "ground_truth_context": ["Alzheimer's disease is characterized pathologically by the presence of extracellular amyloid plaques, primarily composed of amyloid-beta (Abeta) peptides, and intracellular neurofibrillary tangles (NFTs), composed of hyperphosphorylated tau protein."]
+  },
+  {
+    "question": "Which enzyme is responsible for the transcription of mRNA in eukaryotes?",
+    "ground_truth": "RNA polymerase II is the enzyme responsible for transcribing mRNA in eukaryotes.",
+    "ground_truth_context": ["In eukaryotic cells, RNA polymerase II is the central enzyme that catalyzes the transcription of DNA to synthesize precursors of mRNA and most snRNA and microRNAs."]
+  },
+  {
+    "question": "What is the function of the ACE2 receptor in SARS-CoV-2 infection?",
+    "ground_truth": "The ACE2 receptor acts as the primary cellular entry point for SARS-CoV-2. The viral spike protein binds to ACE2 to facilitate viral entry into the host cell.",
+    "ground_truth_context": ["SARS-CoV-2 utilizes the angiotensin-converting enzyme 2 (ACE2) receptor for entry into target cells. The viral spike (S) glycoprotein binds to the ACE2 receptor, mediating membrane fusion and viral internalization."]
+  },
+  {
+    "question": "What are BRCA1 and BRCA2 genes associated with?",
+    "ground_truth": "BRCA1 and BRCA2 are tumor suppressor genes strongly associated with an increased risk of developing breast and ovarian cancers when mutated.",
+    "ground_truth_context": ["BRCA1 and BRCA2 are human genes that produce tumor suppressor proteins. Inherited mutations in these genes are responsible for the majority of hereditary breast and ovarian syndrome families."]
+  },
+  {
+    "question": "How does CRISPR-Cas9 edit DNA?",
+    "ground_truth": "CRISPR-Cas9 edits DNA by using a guide RNA to direct the Cas9 nuclease to a specific target sequence in the genome, where it creates a double-strand break that can then be repaired or altered.",
+    "ground_truth_context": ["The CRISPR-Cas9 system relies on a single guide RNA (sgRNA) to direct the Cas9 endonuclease to a specific genomic locus. Upon binding, Cas9 induces a double-strand break (DSB) at the target site, which can be harnessed for targeted genome editing via cellular DNA repair mechanisms."]
+  }
+]

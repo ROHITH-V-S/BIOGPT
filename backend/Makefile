@@ -11,3 +11,6 @@ test:
 
 compare:
 	python scripts/retrieval_comparison.py
+
+eval:
+	python scripts/run_eval.py
