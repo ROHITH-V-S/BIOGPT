@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 
 class QueryRequest(BaseModel):
-    query: str
-    max_results: int = 5
+    query: str = Field(..., min_length=1, max_length=2000)
+    max_results: int = Field(5, ge=1, le=20)
     stream: bool = False
     entity_aware: bool = False
 
@@ -22,6 +22,12 @@ class IngestRequest(BaseModel):
     pdf_path: Optional[str] = None
     pubmed_query: Optional[str] = None
     max_papers: int = 5
+
+    @field_validator('pdf_path')
+    def validate_pdf_path(cls, v):
+        if v is not None and not v.endswith('.pdf'):
+            raise ValueError('pdf_path must end with .pdf')
+        return v
 
 class IngestResponse(BaseModel):
     status: str

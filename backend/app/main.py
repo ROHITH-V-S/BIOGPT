@@ -13,9 +13,10 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.config import settings
 from app.schemas import (
@@ -26,14 +27,15 @@ from app.rag.engine import RAGEngine
 from app.rag.embedder import embed_and_store
 from app.rag.loader import load_pdf_chunks
 from app.ner import extract_entities
+from app.logging_config import setup_logging, request_id_var
+from app.middleware import RequestIDMiddleware
+from app.rate_limiter import rate_limit_dependency
+from app.auth import verify_api_key
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -75,6 +77,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -137,6 +140,33 @@ async def fetch_pubmed(query: str, max_results: int = 5) -> list[PaperSummary]:
 
 
 # ---------------------------------------------------------------------------
+# Exception Handlers
+# ---------------------------------------------------------------------------
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": str(exc.detail), "detail": None},
+        headers=getattr(exc, "headers", None)
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"error": "Validation Error", "detail": str(exc.errors())},
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "detail": f"Request ID: {request_id_var.get()}"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 @app.get("/health", response_model=HealthResponse)
@@ -150,7 +180,7 @@ async def health():
     )
 
 
-@app.post("/query")
+@app.post("/query", dependencies=[Depends(rate_limit_dependency), Depends(verify_api_key)])
 async def query_endpoint(req: QueryRequest):
     """
     Run a RAG query.
@@ -261,7 +291,7 @@ async def _stream_rag_response(req: QueryRequest) -> AsyncGenerator[str, None]:
         yield f'event: error\ndata: {json.dumps({"error": str(exc)})}\n\n'
 
 
-@app.post("/ingest", response_model=IngestResponse)
+@app.post("/ingest", response_model=IngestResponse, dependencies=[Depends(rate_limit_dependency), Depends(verify_api_key)])
 async def ingest_endpoint(req: IngestRequest):
     """Ingest a PDF file into the vector index."""
     if rag_engine is None:

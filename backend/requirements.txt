@@ -19,3 +19,6 @@ spacy>=3.7.0
 scispacy
 # Note: scispaCy models need special install: 
 # pip install https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
+
+pytest==8.3.0
+pytest-asyncio==0.24.0

@@ -1,6 +1,10 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    LOG_LEVEL: str = 'INFO'
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 30
+    API_KEY_REQUIRED: bool = False
+    API_KEY: str = ''
     OPENROUTER_API_KEY: str
     OPENROUTER_BASE_URL: str = 'https://openrouter.ai/api/v1'
     LLM_MODEL_FALLBACK_LIST: list[str] = [

@@ -9,6 +9,9 @@ ingest:
 test:
 	pytest tests/ -v
 
+lint:
+	python -m py_compile app/main.py && echo 'OK'
+
 compare:
 	python scripts/retrieval_comparison.py
 
