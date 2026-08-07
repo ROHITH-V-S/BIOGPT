@@ -8,3 +8,6 @@ ingest:
 
 test:
 	pytest tests/ -v
+
+compare:
+	python scripts/retrieval_comparison.py

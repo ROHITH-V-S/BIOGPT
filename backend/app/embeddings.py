@@ -31,9 +31,11 @@ class EmbeddingService:
             self._model_name = settings.EMBEDDING_MODEL
             logger.info("Embedding backend: OpenRouter (%s)", self._model_name)
         else:
+            backend_model = settings.LOCAL_EMBEDDING_MODEL if self.backend == "local" else settings.BIOMEDICAL_EMBEDDING_MODEL
             logger.info(
-                "Embedding backend: local (%s) — will load on first use.",
-                settings.LOCAL_EMBEDDING_MODEL,
+                "Embedding backend: %s (%s) — will load on first use.",
+                self.backend,
+                backend_model,
             )
 
     def _get_local_model(self):
@@ -41,8 +43,9 @@ class EmbeddingService:
         if self._local_model is None:
             from sentence_transformers import SentenceTransformer
 
-            logger.info("Loading local embedding model: %s …", settings.LOCAL_EMBEDDING_MODEL)
-            self._local_model = SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
+            backend_model = settings.LOCAL_EMBEDDING_MODEL if self.backend == "local" else settings.BIOMEDICAL_EMBEDDING_MODEL
+            logger.info("Loading local embedding model: %s …", backend_model)
+            self._local_model = SentenceTransformer(backend_model)
             logger.info("Local embedding model loaded.")
         return self._local_model
 

@@ -9,8 +9,9 @@ class Settings(BaseSettings):
         'poolside/laguna-s-2.1:free'
     ]
     EMBEDDING_MODEL: str = 'nvidia/nemotron-3-embed-1b:free'
-    EMBEDDING_BACKEND: str = 'openrouter'  # 'openrouter' or 'local'
+    EMBEDDING_BACKEND: str = 'openrouter'  # 'openrouter', 'local', or 'biomedical'
     LOCAL_EMBEDDING_MODEL: str = 'sentence-transformers/all-MiniLM-L6-v2'
+    BIOMEDICAL_EMBEDDING_MODEL: str = 'pritamdeka/PubMedBERT-mnli-snli-scinli-scitail-mednli-stsb'
     FAISS_INDEX_PATH: str = 'data/vector.index'
     CHUNK_DATA_PATH: str = 'data/chunk_data.pkl'
     CORS_ORIGINS: list[str] = ['http://localhost:3000', 'http://localhost:5173']
