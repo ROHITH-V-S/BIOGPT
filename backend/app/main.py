@@ -25,8 +25,14 @@ from app.schemas import (
 )
 from app.rag.engine import RAGEngine
 from app.rag.embedder import embed_and_store
-from app.rag.loader import load_pdf_chunks
+from app.rag.loader import load_pdf_chunks, split_text
+from app import cache
+from app.llm import (
+    AllModelsFailedError, active_backend, active_models, generate_answer,
+    stream_answer, _get_successful_model,
+)
 from app.ner import extract_entities
+from app.pubmed import PubMedArticle, search_abstracts, search_pmids, fetch_abstracts
 from app.logging_config import setup_logging, request_id_var
 from app.middleware import RequestIDMiddleware
 from app.rate_limiter import rate_limit_dependency
@@ -58,9 +64,15 @@ async def lifespan(app: FastAPI):
     rag_engine.initialize()
     logger.info("RAG engine initialized.")
 
+    # Probe the cache at startup so its state is known before the first request
+    # and a misconfigured REDIS_URL shows up in the logs immediately rather than
+    # as a surprise latency spike. A failure here is non-fatal by design.
+    await cache.get_client()
+
     yield  # ← app is running
 
     logger.info("Shutting down BioGPT Explorer API …")
+    await cache.close()
 
 
 # ---------------------------------------------------------------------------
@@ -90,53 +102,85 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # PubMed helper (async)
 # ---------------------------------------------------------------------------
-async def fetch_pubmed(query: str, max_results: int = 5) -> list[PaperSummary]:
-    """Fetch paper metadata from NCBI PubMed E-utilities."""
+SUMMARY_SNIPPET_CHARS = 280
+
+#: Shown when every fallback model returns 429. OpenRouter's free tier is
+#: capped per *day* (reset at 00:00 UTC), so "try again shortly" would be
+#: misleading — say what actually happened and what resolves it.
+QUOTA_MESSAGE = (
+    "OpenRouter free-tier quota exhausted — all fallback models returned 429. "
+    "The daily allowance (50 requests) resets at 00:00 UTC. Retrieval, entity "
+    "extraction and PubMed search still work; only answer generation is "
+    "unavailable. To keep generating without waiting, set LLM_BACKEND=ollama "
+    "to serve a model locally."
+)
+
+
+async def fetch_pubmed(query: str, max_results: int = 5) -> list[PubMedArticle]:
+    """
+    Fetch PubMed articles *with their abstracts* for a query.
+
+    Uses efetch rather than esummary so the abstract text is available — both
+    to show a real snippet in the UI and to hand the model something it can
+    actually ground on. Network failures degrade to an empty list: PubMed is
+    an enrichment, never a hard dependency of answering.
+    """
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            search_resp = await client.get(
-                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
-                params={
-                    "db": "pubmed",
-                    "term": query,
-                    "retmode": "json",
-                    "retmax": max_results,
-                },
-            )
-            search_resp.raise_for_status()
-            ids = (
-                search_resp.json()
-                .get("esearchresult", {})
-                .get("idlist", [])
-            )
-            if not ids:
-                return []
-
-            summary_resp = await client.get(
-                "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
-                params={
-                    "db": "pubmed",
-                    "id": ",".join(ids),
-                    "retmode": "json",
-                },
-            )
-            summary_resp.raise_for_status()
-            result_data = summary_resp.json().get("result", {})
-
-            papers: list[PaperSummary] = []
-            for pid in ids:
-                item = result_data.get(pid, {})
-                papers.append(
-                    PaperSummary(
-                        title=item.get("title", "No Title"),
-                        summary=item.get("sorttitle", "PubMed abstract"),
-                        link=f"https://pubmed.ncbi.nlm.nih.gov/{pid}/",
-                    )
-                )
-            return papers
+        return await search_abstracts(query, max_results)
     except Exception as exc:
         logger.error("PubMed fetch error: %s", exc)
         return []
+
+
+def to_summaries(articles: list[PubMedArticle]) -> list[PaperSummary]:
+    """Project articles onto the wire format the frontend renders."""
+    summaries: list[PaperSummary] = []
+    for art in articles:
+        snippet = art.abstract[:SUMMARY_SNIPPET_CHARS].rstrip()
+        if len(art.abstract) > SUMMARY_SNIPPET_CHARS:
+            snippet += "…"
+        summaries.append(
+            PaperSummary(
+                title=art.title or "Untitled",
+                summary=snippet or art.citation,
+                link=art.url,
+            )
+        )
+    return summaries
+
+
+def chunks_from_articles(articles: list[PubMedArticle]) -> list[str]:
+    """
+    Turn PubMed abstracts into indexable chunks.
+
+    Each chunk keeps its "[PubMed <pmid>] <title>" header so provenance
+    survives retrieval — without it, an indexed abstract becomes anonymous
+    text and the model can no longer cite where a claim came from. Long
+    abstracts are split with the same splitter used for PDFs.
+    """
+    chunks: list[str] = []
+    for art in articles:
+        header = f"[PubMed {art.pmid}] {art.title}"
+        for part in split_text(art.abstract):
+            chunks.append(f"{header}\n{part}")
+    return chunks
+
+
+def build_context(
+    chunks: list[str], articles: list[PubMedArticle], use_pubmed: bool
+) -> list[str]:
+    """
+    Assemble the context blocks handed to the LLM.
+
+    Local corpus chunks come first (they are the retrieved, ranked evidence);
+    PubMed abstracts follow, each tagged with its PMID so the model can cite
+    provenance. Previously the abstracts were fetched and displayed but never
+    passed to generation, so the UI credited sources the model had not read.
+    """
+    context = [f"[Local corpus] {c}" for c in chunks]
+    if use_pubmed:
+        context.extend(art.as_context() for art in articles)
+    return context
 
 
 # ---------------------------------------------------------------------------
@@ -175,8 +219,10 @@ async def health():
     return HealthResponse(
         status="ok",
         embedding_backend=settings.EMBEDDING_BACKEND,
-        llm_models=settings.LLM_MODEL_FALLBACK_LIST,
+        llm_backend=active_backend(),
+        llm_models=active_models(),
         index_loaded=rag_engine is not None and rag_engine.index is not None,
+        cache_active=cache.is_active(),
     )
 
 
@@ -219,9 +265,11 @@ async def query_endpoint(req: QueryRequest):
         else:
             context_chunks = await rag_engine.retrieve(req.query, k=req.max_results)
             
-        sources = await sources_task
+        articles = await sources_task
+        sources = to_summaries(articles)
+        context = build_context(context_chunks, articles, req.use_pubmed_context)
 
-        if not context_chunks:
+        if not context:
             return QueryResponse(
                 answer="No relevant information found in the knowledge base. Try ingesting documents first.",
                 sources=sources,
@@ -229,10 +277,17 @@ async def query_endpoint(req: QueryRequest):
                 entities=entities
             )
 
-        from app.llm import generate_answer
-        answer = await generate_answer(req.query, context_chunks)
+        answer = await generate_answer(req.query, context)
 
         return QueryResponse(answer=answer, sources=sources, chunks=context_chunks, entities=entities)
+    except AllModelsFailedError as exc:
+        logger.error("Generation unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail=QUOTA_MESSAGE if exc.rate_limited else "All LLM models failed.",
+        )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Query error")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -258,7 +313,9 @@ async def _stream_rag_response(req: QueryRequest) -> AsyncGenerator[str, None]:
         else:
             context_chunks = await rag_engine.retrieve(req.query, k=req.max_results)
             
-        sources = await sources_task
+        articles = await sources_task
+        sources = to_summaries(articles)
+        context = build_context(context_chunks, articles, req.use_pubmed_context)
 
         # 2. Send retrieved chunks + sources first
         chunk_event = {
@@ -268,24 +325,32 @@ async def _stream_rag_response(req: QueryRequest) -> AsyncGenerator[str, None]:
         }
         yield f"event: chunk\ndata: {json.dumps(chunk_event)}\n\n"
 
-        if not context_chunks:
+        if not context:
             no_data_msg = "No relevant information found in the knowledge base."
             yield f'event: token\ndata: {json.dumps({"token": no_data_msg})}\n\n'
             yield f'event: done\ndata: {json.dumps({"answer": no_data_msg, "model": "none"})}\n\n'
             return
 
         # 3. Stream answer tokens
-        from app.llm import stream_answer, _get_successful_model
         full_answer = ""
-        model_used = settings.LLM_MODEL_FALLBACK_LIST[0]
 
-        async for token in stream_answer(req.query, context_chunks):
+        async for token in stream_answer(req.query, context):
             full_answer += token
             yield f'event: token\ndata: {json.dumps({"token": token})}\n\n'
+
+        # Report the model that actually served the request — the first entry
+        # in the fallback list may well have been skipped.
+        model_used = _get_successful_model() or active_models()[0]
 
         # 4. Send done event
         yield f'event: done\ndata: {json.dumps({"answer": full_answer, "model": model_used})}\n\n'
 
+    except AllModelsFailedError as exc:
+        # The stream has already returned 200, so the failure has to travel as
+        # an SSE event rather than an HTTP status.
+        logger.error("Generation unavailable mid-stream: %s", exc)
+        message = QUOTA_MESSAGE if exc.rate_limited else "All LLM models failed."
+        yield f'event: error\ndata: {json.dumps({"error": message})}\n\n'
     except Exception as exc:
         logger.exception("SSE streaming error")
         yield f'event: error\ndata: {json.dumps({"error": str(exc)})}\n\n'
@@ -297,15 +362,30 @@ async def ingest_endpoint(req: IngestRequest):
     if rag_engine is None:
         raise HTTPException(status_code=503, detail="RAG engine not initialized")
 
-    if not req.pdf_path:
-        raise HTTPException(status_code=400, detail="Must provide pdf_path")
+    if not req.pdf_path and not req.pubmed_query:
+        raise HTTPException(
+            status_code=400, detail="Must provide either pdf_path or pubmed_query"
+        )
 
-    if not os.path.isfile(req.pdf_path):
+    if req.pdf_path and not os.path.isfile(req.pdf_path):
         raise HTTPException(status_code=404, detail=f"File not found: {req.pdf_path}")
 
     try:
-        chunks = load_pdf_chunks(req.pdf_path)
-        logger.info("Loaded %d chunks from %s", len(chunks), req.pdf_path)
+        if req.pdf_path:
+            chunks = load_pdf_chunks(req.pdf_path)
+            logger.info("Loaded %d chunks from %s", len(chunks), req.pdf_path)
+        else:
+            articles = await search_abstracts(req.pubmed_query, req.max_papers)
+            if not articles:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No PubMed abstracts found for: {req.pubmed_query}",
+                )
+            chunks = chunks_from_articles(articles)
+            logger.info(
+                "Loaded %d chunks from %d PubMed abstracts for '%s'",
+                len(chunks), len(articles), req.pubmed_query,
+            )
 
         # Ensure output directories exist
         os.makedirs(os.path.dirname(settings.FAISS_INDEX_PATH) or "data", exist_ok=True)

@@ -15,7 +15,11 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
+    /* Vite injects import.meta.env — these are its ambient types */
+    "types": [
+      "vite/client"
+    ],
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,
@@ -23,16 +27,10 @@
     "noFallthroughCasesInSwitch": true,
     "allowJs": true,
     "incremental": true,
-    "esModuleInterop": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    "esModuleInterop": true
   },
   "include": [
-    "src",
-    ".next/types/**/*.ts"
+    "src"
   ],
   "references": [
     {
@@ -40,6 +38,7 @@
     }
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "dist"
   ]
 }

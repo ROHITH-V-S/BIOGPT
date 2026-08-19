@@ -1,0 +1,122 @@
+[
+  {
+    "question": "What is the role of TP53 in cancer development?",
+    "topic": "TP53 p53 tumor suppressor cell cycle cancer",
+    "pmids": [
+      "42597457",
+      "42595554",
+      "42530251",
+      "42510971",
+      "42500567",
+      "42466368",
+      "42447505",
+      "42439804"
+    ],
+    "chunks": 50
+  },
+  {
+    "question": "How do mRNA vaccines work?",
+    "topic": "mRNA vaccine mechanism spike protein immune response",
+    "pmids": [
+      "42506605",
+      "42261850",
+      "42117695",
+      "41863913",
+      "41819108",
+      "41798954",
+      "41785286",
+      "41631862"
+    ],
+    "chunks": 41
+  },
+  {
+    "question": "What is the primary mechanism of action of Metformin in treating type 2 diabetes?",
+    "topic": "metformin mechanism of action hepatic glucose production insulin sensitivity",
+    "pmids": [
+      "42451110",
+      "42106472",
+      "41572058",
+      "41388552",
+      "41285865",
+      "41097011",
+      "40524049",
+      "40466424"
+    ],
+    "chunks": 35
+  },
+  {
+    "question": "What are the hallmarks of Alzheimer's disease pathology?",
+    "topic": "Alzheimer disease amyloid beta plaques neurofibrillary tangles tau",
+    "pmids": [
+      "42596024",
+      "42593621",
+      "42561665",
+      "42560134",
+      "42541427",
+      "42540093",
+      "42520518",
+      "42516384"
+    ],
+    "chunks": 36
+  },
+  {
+    "question": "Which enzyme is responsible for the transcription of mRNA in eukaryotes?",
+    "topic": "RNA polymerase II eukaryotic transcription mRNA synthesis",
+    "pmids": [
+      "42567854",
+      "42486319",
+      "42455947",
+      "42414141",
+      "42379337",
+      "42377581",
+      "42363759",
+      "42360582"
+    ],
+    "chunks": 31
+  },
+  {
+    "question": "What is the function of the ACE2 receptor in SARS-CoV-2 infection?",
+    "topic": "ACE2 receptor SARS-CoV-2 spike glycoprotein viral entry",
+    "pmids": [
+      "42490662",
+      "42473348",
+      "42435246",
+      "42396438",
+      "42331085",
+      "42300082",
+      "42289940",
+      "42248906"
+    ],
+    "chunks": 30
+  },
+  {
+    "question": "What are BRCA1 and BRCA2 genes associated with?",
+    "topic": "BRCA1 BRCA2 hereditary breast ovarian cancer tumor suppressor",
+    "pmids": [
+      "42511710",
+      "42477928",
+      "42208009",
+      "42166900",
+      "41941938",
+      "41714267",
+      "41697532",
+      "41681102"
+    ],
+    "chunks": 43
+  },
+  {
+    "question": "How does CRISPR-Cas9 edit DNA?",
+    "topic": "CRISPR Cas9 guide RNA double strand break genome editing",
+    "pmids": [
+      "42595042",
+      "42581041",
+      "42580703",
+      "42499346",
+      "42487445",
+      "42470166",
+      "42427441",
+      "42423795"
+    ],
+    "chunks": 37
+  }
+]

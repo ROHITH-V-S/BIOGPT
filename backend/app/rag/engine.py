@@ -3,6 +3,7 @@ RAG query engine — orchestrates retrieval + answer generation.
 """
 
 import logging
+import math
 from typing import AsyncGenerator
 
 from app.config import settings
@@ -10,7 +11,7 @@ from app.embeddings import EmbeddingService
 from app.rag.embedder import load_index
 from app.llm import generate_answer, stream_answer
 from app.schemas import QueryResponse, PaperSummary
-from app.ner import extract_entities
+from app.ner import extract_entities, extract_key_terms
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +19,13 @@ logger = logging.getLogger(__name__)
 class RAGEngine:
     """Encapsulates the FAISS index, chunk store, and embedding service."""
 
-    def __init__(self) -> None:
-        self.index_path = settings.FAISS_INDEX_PATH
-        self.chunk_path = settings.CHUNK_DATA_PATH
+    def __init__(
+        self, index_path: str | None = None, chunk_path: str | None = None
+    ) -> None:
+        # Paths are overridable so an experiment (e.g. the eval harness) can
+        # build its own corpus without disturbing the live index.
+        self.index_path = index_path or settings.FAISS_INDEX_PATH
+        self.chunk_path = chunk_path or settings.CHUNK_DATA_PATH
         self.embedder = EmbeddingService()
         self.index = None
         self.chunks: list[str] = []
@@ -48,8 +53,13 @@ class RAGEngine:
         self._initialized = False
         self.initialize()
 
-    async def retrieve(self, query: str, k: int = 5) -> list[str]:
-        """Retrieve the top-k most similar chunks for a query."""
+    #: Weight on the vector score in the fused ranking. Entity evidence should
+    #: adjust the ordering, not replace it — at 0.0 the re-ranker discards
+    #: similarity entirely, which measurably hurt precision.
+    VECTOR_WEIGHT = 0.7
+
+    async def search(self, query: str, k: int = 5) -> list[tuple[str, float]]:
+        """Vector search returning (chunk, distance) pairs, nearest first."""
         self.initialize()
 
         if self.index is None or len(self.chunks) == 0:
@@ -61,45 +71,84 @@ class RAGEngine:
 
         # Clamp k to actual index size
         actual_k = min(k, self.index.ntotal)
-        _, indices = self.index.search(query_embedding, actual_k)
+        distances, indices = self.index.search(query_embedding, actual_k)
 
-        results = []
-        for idx in indices[0]:
+        results: list[tuple[str, float]] = []
+        for idx, dist in zip(indices[0], distances[0]):
             if 0 <= idx < len(self.chunks):
-                results.append(self.chunks[idx])
+                results.append((self.chunks[idx], float(dist)))
 
         logger.info("Retrieved %d chunks.", len(results))
         return results
 
+    async def retrieve(self, query: str, k: int = 5) -> list[str]:
+        """Retrieve the top-k most similar chunks for a query."""
+        return [chunk for chunk, _ in await self.search(query, k)]
+
     async def retrieve_entity_aware(self, query: str, k: int = 5) -> list[str]:
-        """Entity-aware retrieval: retrieves 2*k, re-ranks based on entities, returns top-k."""
-        entities_dict = extract_entities(query)
-        # Flatten all extracted entities into a single list of lowercase strings
-        entities = []
-        for v in entities_dict.values():
-            entities.extend([e.lower() for e in v])
-        
-        # Get top 2*k candidates using normal vector search
-        candidates = await self.retrieve(query, k=k * 2)
-        
-        if not candidates:
+        """
+        Retrieve 2k candidates by vector similarity, then re-rank by fusing
+        similarity with IDF-weighted biomedical term overlap.
+
+        Three properties matter here, each fixing a measured failure:
+
+        * **IDF weighting.** A term present in every candidate carries no
+          information — when all six candidates mention "TP53", counting it
+          scores them identically and the re-rank is a no-op. Weighting by
+          inverse document frequency *within the candidate set* makes common
+          terms contribute ~0 and rare, discriminating ones dominate.
+        * **Score fusion, not replacement.** Raw match counts let a weakly
+          similar chunk leapfrog a strong one; blending with the normalised
+          vector score keeps similarity in control while letting entity
+          evidence break near-ties.
+        * **Untyped terms.** Uses every biomedical span, not just those that
+          fit a gene/disease/drug bucket, so "metformin" and "RNA polymerase
+          II" still contribute.
+        """
+        scored = await self.search(query, k=k * 2)
+        if not scored:
             return []
-            
-        # Re-rank: simple count of entity matches
-        scored_candidates = []
-        for chunk in candidates:
-            chunk_lower = chunk.lower()
-            score = 0
-            for entity in entities:
-                if entity in chunk_lower:
-                    score += 1
-            scored_candidates.append((score, chunk))
-            
-        # Sort by score descending (stable sort maintains vector search order for ties)
-        scored_candidates.sort(key=lambda x: x[0], reverse=True)
-        
-        # Return top k
-        return [chunk for score, chunk in scored_candidates[:k]]
+
+        terms = extract_key_terms(query)
+        if not terms:
+            logger.info("No biomedical terms in query — using vector order.")
+            return [chunk for chunk, _ in scored[:k]]
+
+        chunks_lower = [chunk.lower() for chunk, _ in scored]
+        n = len(scored)
+
+        # IDF over the candidate set: log(N / (1 + df)), floored at 0 so a term
+        # appearing in every candidate contributes nothing.
+        weights: dict[str, float] = {}
+        for term in terms:
+            df = sum(1 for c in chunks_lower if term in c)
+            weights[term] = max(0.0, math.log(n / (1 + df)))
+
+        max_weight = sum(weights.values())
+
+        # Convert L2 distances to similarities, then min-max normalise so both
+        # components live on [0, 1] and the weighting is meaningful.
+        sims = [1.0 / (1.0 + dist) for _, dist in scored]
+        lo, hi = min(sims), max(sims)
+        span = (hi - lo) or 1.0
+
+        ranked = []
+        for i, (chunk, _) in enumerate(scored):
+            vector_score = (sims[i] - lo) / span
+            entity_score = (
+                sum(w for t, w in weights.items() if t in chunks_lower[i]) / max_weight
+                if max_weight > 0
+                else 0.0
+            )
+            fused = (
+                self.VECTOR_WEIGHT * vector_score
+                + (1 - self.VECTOR_WEIGHT) * entity_score
+            )
+            ranked.append((fused, i, chunk))
+
+        # Sort by fused score; ties fall back to original vector rank.
+        ranked.sort(key=lambda t: (-t[0], t[1]))
+        return [chunk for _, _, chunk in ranked[:k]]
 
     async def query(
         self,

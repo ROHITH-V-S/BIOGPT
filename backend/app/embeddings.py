@@ -11,7 +11,9 @@ import numpy as np
 from openai import AsyncOpenAI
 from tenacity import retry, wait_exponential, stop_after_attempt
 
+from app import cache
 from app.config import settings
+from app.retry import retry_if_transient
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +55,10 @@ class EmbeddingService:
     # OpenRouter path
     # ------------------------------------------------------------------
     @retry(
+        retry=retry_if_transient,
         wait=wait_exponential(multiplier=1, min=1, max=30),
         stop=stop_after_attempt(3),
+        reraise=True,
     )
     async def _embed_openrouter(self, texts: List[str]) -> np.ndarray:
         """Embed via OpenRouter's embeddings endpoint with retry."""
@@ -62,6 +66,9 @@ class EmbeddingService:
         response = await self._client.embeddings.create(
             input=texts,
             model=self._model_name,
+            # The OpenAI SDK defaults to base64; OpenRouter's embedding
+            # providers reject it, so request plain floats explicitly.
+            encoding_format="float",
         )
         vectors = [item.embedding for item in response.data]
         return np.array(vectors, dtype=np.float32)
@@ -79,25 +86,67 @@ class EmbeddingService:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    def _cache_model_id(self) -> str:
+        """Cache identity of the active model — dimensionality differs per backend."""
+        if self.backend == "openrouter":
+            return f"openrouter/{self._model_name}"
+        model = (
+            settings.LOCAL_EMBEDDING_MODEL
+            if self.backend == "local"
+            else settings.BIOMEDICAL_EMBEDDING_MODEL
+        )
+        return f"{self.backend}/{model}"
+
+    async def _embed_uncached(self, texts: List[str]) -> np.ndarray:
+        if self.backend == "openrouter":
+            batch_size = 10  # stay under rate limits
+            batches = []
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                batches.append(await self._embed_openrouter(batch))
+            return np.vstack(batches)
+        return self._embed_local(texts)
+
     async def embed_texts(self, texts: List[str]) -> np.ndarray:
         """
-        Embed a batch of texts.
+        Embed a batch of texts, reusing any cached vectors.
+
+        Caching is per *text*, not per batch, so a partially-changed corpus only
+        pays for the texts that actually changed. Re-running the eval harness
+        over an unchanged corpus becomes free — which matters because embedding
+        ~300 chunks was the largest single draw on a 50-request daily quota.
 
         Returns an ndarray of shape ``(len(texts), embedding_dim)``.
         """
         if not texts:
             return np.empty((0, 0), dtype=np.float32)
 
-        if self.backend == "openrouter":
-            batch_size = 10  # stay under rate limits
-            batches = []
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i : i + batch_size]
-                batch_emb = await self._embed_openrouter(batch)
-                batches.append(batch_emb)
-            return np.vstack(batches)
-        else:
-            return self._embed_local(texts)
+        model_id = self._cache_model_id()
+        cached: dict[int, np.ndarray] = {}
+        missing: list[int] = []
+
+        for i, text in enumerate(texts):
+            vector = await cache.get_embedding(model_id, text)
+            if vector is None:
+                missing.append(i)
+            else:
+                cached[i] = vector
+
+        if cached:
+            logger.info(
+                "Embedding cache: %d/%d hit (%d to compute).",
+                len(cached), len(texts), len(missing),
+            )
+
+        if not missing:
+            return np.vstack([cached[i] for i in range(len(texts))])
+
+        fresh = await self._embed_uncached([texts[i] for i in missing])
+        for slot, i in enumerate(missing):
+            cached[i] = fresh[slot]
+            await cache.set_embedding(model_id, texts[i], fresh[slot])
+
+        return np.vstack([cached[i] for i in range(len(texts))]).astype(np.float32)
 
     async def embed_query(self, query: str) -> np.ndarray:
         """
@@ -105,7 +154,11 @@ class EmbeddingService:
 
         Returns an ndarray of shape ``(1, embedding_dim)``.
         """
-        if self.backend == "openrouter":
-            return await self._embed_openrouter([query])
-        else:
-            return self._embed_local([query])
+        model_id = self._cache_model_id()
+        vector = await cache.get_embedding(model_id, query)
+        if vector is not None:
+            return vector.reshape(1, -1).astype(np.float32)
+
+        result = await self._embed_uncached([query])
+        await cache.set_embedding(model_id, query, result[0])
+        return result

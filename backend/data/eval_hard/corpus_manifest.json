@@ -1,0 +1,116 @@
+[
+  {
+    "question": "Which BRCA protein binds RAD51 directly through BRC repeats to mediate homologous recombination?",
+    "topic": "BRCA2 RAD51 BRC repeats homologous recombination BRCA1",
+    "pmids": [
+      "12915460",
+      "11923292",
+      "10446958"
+    ],
+    "chunks": 11
+  },
+  {
+    "question": "Which BRCA protein forms a heterodimer with BARD1 to act as an E3 ubiquitin ligase?",
+    "topic": "BRCA1 BARD1 ubiquitin ligase",
+    "pmids": [
+      "42581301",
+      "42475683",
+      "42434936",
+      "42427510",
+      "42374033",
+      "42309254",
+      "42105598",
+      "41917467"
+    ],
+    "chunks": 28
+  },
+  {
+    "question": "Is ACE or ACE2 the cellular entry receptor for SARS-CoV-2?",
+    "topic": "ACE2 angiotensin converting enzyme 2 SARS-CoV-2 receptor ACE inhibitor",
+    "pmids": [
+      "42455170",
+      "42331085",
+      "42297820",
+      "42289940",
+      "42285427",
+      "42248906",
+      "42204846",
+      "42174382"
+    ],
+    "chunks": 28
+  },
+  {
+    "question": "Which protein ubiquitinates p53 and targets it for proteasomal degradation?",
+    "topic": "MDM2 p53 TP53 ubiquitination proteasomal degradation negative regulator",
+    "pmids": [
+      "42159875",
+      "41527197",
+      "41515979",
+      "34866036",
+      "33773191",
+      "33503543",
+      "32075226",
+      "31652301"
+    ],
+    "chunks": 33
+  },
+  {
+    "question": "Which receptor does trastuzumab target?",
+    "topic": "trastuzumab HER2 ERBB2 breast cancer EGFR receptor",
+    "pmids": [
+      "42551944",
+      "42563503",
+      "42512912",
+      "42512804",
+      "42504645",
+      "42500590",
+      "42438913",
+      "42431148"
+    ],
+    "chunks": 41
+  },
+  {
+    "question": "Which receptor tyrosine kinase do gefitinib and erlotinib inhibit?",
+    "topic": "gefitinib erlotinib EGFR tyrosine kinase inhibitor lung cancer HER2",
+    "pmids": [
+      "41486501",
+      "40194950",
+      "38338651",
+      "35714425",
+      "32397977",
+      "30500458",
+      "30096481",
+      "29462254"
+    ],
+    "chunks": 41
+  },
+  {
+    "question": "Which interleukin pathway does tocilizumab block?",
+    "topic": "tocilizumab IL-6 receptor interleukin 6 blockade IL-1 antagonist",
+    "pmids": [
+      "41300951",
+      "41210896",
+      "32493441",
+      "32377975",
+      "24561416",
+      "22751605",
+      "21225679"
+    ],
+    "chunks": 35
+  },
+  {
+    "question": "Which CRISPR nuclease generates staggered cuts and recognises a T-rich PAM?",
+    "topic": "Cas12a Cpf1 CRISPR PAM",
+    "pmids": [
+      "42218379",
+      "40972923",
+      "38256061",
+      "37847697",
+      "37733197",
+      "37122009",
+      "36992305",
+      "36813457"
+    ],
+    "chunks": 27
+  }
+]
